@@ -20,11 +20,16 @@ card-dispenser/
 │   ├── reconcile.js     # 夜间对账：Stripe 流水 vs D1 订单
 │   ├── ratelimit.js     # 下单限流（D1 计数，60 秒窗口）
 │   ├── idempotency.js   # 幂等键，响应缓存 24 小时
+│   ├── alerts.js        # 告警评估：审计事件 → sev 分级 → Devin 任务
 │   └── admin.js         # kill switch、held 队列、人工发卡/退款
 ├── test/                # node:test：风控打分、熔断条件、心跳过期
 ├── docs/
 │   ├── api-contract.md  # API 契约
 │   ├── architecture.md  # 架构、模块分工、失败模式
+│   ├── devin-ops-loop.md  # Devin Bot 运维与开发闭环
+│   ├── oncall-runbook.md  # oncall 手册
+│   ├── slo.md           # SLO 与 error budget
+│   ├── postmortem-template.md  # postmortem 模板
 │   ├── erd.mmd          # 表结构图
 │   ├── sequence.mmd     # 下单到发卡时序图
 │   ├── sequence-killswitch.mmd  # 三层熔断时序图
@@ -71,12 +76,16 @@ npm run dev
 
 ## Devin Bot 接在哪里
 
-- `POST /v1/bot/tasks`：`retry-fulfill`（重发失败的单）、`reconcile`（夜间对账）、`check-breaker`（熔断检查）。
+- `POST /v1/bot/tasks`：`alerts`（告警分级）、`retry-fulfill`（重发失败的单）、`reconcile`（夜间对账）、`check-breaker`（熔断检查）。
 - `POST /v1/bot/heartbeat`：bot 每 5 分钟报一次到。
 - 定时任务每天 02:00 UTC：对账 + 清限流表 + 熔断检查。
 - 订单 webhook 里 kill switch 开着或心跳断了，订单直接进 `held`，bot 只处理它标出来的单。
 
+## Devin Bot 运维闭环
+
+上线之后 bot 就是一线 oncall：接告警（sev1/sev2/sev3）、定位出问题的 commit、开 PR 修复、跑对账、写 postmortem 初稿。人只做三件事：合 PR、点 kill switch 恢复、处理人工验证。完整流程见 `docs/devin-ops-loop.md`，oncall 手册见 `docs/oncall-runbook.md`，SLO 见 `docs/slo.md`。
+
 ## 状态
 
-- 已就绪：表结构、API 契约、时序图、Worker 全部路由、Stripe 验签、风控分流、限流幂等、对账、kill switch、测试、CI。
+- 已就绪：表结构、API 契约、时序图、Worker 全部路由、Stripe 验签、风控分流、限流幂等、对账、kill switch、测试 17 项、CI、告警分级、oncall 手册、SLO 与 postmortem 模板。
 - 待接：`pending` 订单超 30 分钟未付款自动释放锁卡（威胁模型第 6 条）；店面 checkout 页；`src/stripe.js` 的 `created[gte]` 对账分页（超过 100 笔要翻页）。

@@ -4,6 +4,7 @@ import { json, getConfig, setConfig, audit, killSwitchOn, heartbeatStale } from 
 import { verifyStripeSignature } from './stripe.js';
 import { fulfillOrder, refundOrder } from './fulfill.js';
 import { getVelocity, triageOrder, retryFailedOrders, checkBreaker, runReconcile } from './bot.js';
+import { evaluateAlerts } from './alerts.js';
 import { checkRateLimit, cleanupRateLimits } from './ratelimit.js';
 import { getIdempotentResponse, saveIdempotentResponse } from './idempotency.js';
 import { handleAdmin } from './admin.js';
@@ -105,6 +106,34 @@ export default {
         const report = await runReconcile(db, env.STRIPE_SECRET_KEY);
         await audit(db, { actor: 'devin-bot', action: 'reconcile', detail: JSON.stringify(report) });
         return json(report);
+      }
+      if (body.type === 'alerts') {
+        const events = await db.prepare(
+          'SELECT action, created_at FROM audit_log WHERE created_at > unixepoch() - 600 ORDER BY created_at DESC LIMIT 200'
+        ).all();
+        const auditEvents = events.results.map((r) => ({
+          type:
+            r.action === 'error'
+              ? 'error'
+              : r.action === 'refund_failed'
+                ? 'refund_failed'
+                : r.action === 'inventory_mismatch'
+                  ? 'inventory_mismatch'
+                  : 'other',
+          at: r.created_at * 1000,
+        }));
+        const held = await db.prepare("SELECT COUNT(*) AS n FROM orders WHERE status = 'held'").first();
+        const unfulfilled = await db.prepare(
+          "SELECT COUNT(*) AS n FROM orders WHERE status IN ('paid', 'pending') AND created_at > unixepoch() - 86400"
+        ).first();
+        const alerts = evaluateAlerts({
+          auditEvents,
+          killSwitchOn: await killSwitchOn(db),
+          heartbeatStale: await heartbeatStale(db),
+          heldCount: held ? held.n : 0,
+          unfulfilledCount: unfulfilled ? unfulfilled.n : 0,
+        });
+        return json({ alerts });
       }
       if (body.type === 'check-breaker') {
         return json(await checkBreaker(db));
