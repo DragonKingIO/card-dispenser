@@ -1,0 +1,13 @@
+name = "card-dispenser"
+main = "src/index.js"
+compatibility_date = "2026-11-20"
+
+# 每天 02:00 UTC：对账 + 清限流表 + 熔断检查（见 src/index.js scheduled）
+[triggers]
+crons = ["0 2 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "card-dispenser"
+# 先跑 npx wrangler d1 create card-dispenser，把返回的 database_id 填到这里
+database_id = "00000000-0000-0000-0000-000000000000"

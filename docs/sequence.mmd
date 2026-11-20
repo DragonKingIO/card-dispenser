@@ -1,0 +1,35 @@
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Buyer as 买家
+    participant Store as 店面 (Worker)
+    participant Stripe as Stripe
+    participant DB as D1 (cards/orders)
+    participant Bot as Devin Bot
+
+    Buyer->>Store: 下单 (sku, 金额)
+    Store->>DB: 查 kill switch + 心跳
+    alt 开关开着 / 心跳断了
+        Store->>Buyer: 503，挂维护页，不收单
+    else 正常
+        Store->>DB: 创建订单 pending
+        Store->>Stripe: 创建 PaymentIntent
+        Buyer->>Stripe: 付款
+        Stripe->>Store: webhook payment_intent.succeeded
+        Store->>DB: 事务锁一张卡 (unsold → locked)
+        Store->>DB: 发卡 (locked → issued)，写审计日志
+        Store->>Buyer: 返回卡密
+    end
+
+    Bot->>Store: 每 5 分钟心跳
+    Bot->>DB: 扫异常单：付款成功未发卡 / 风控 held 单
+    alt 有库存
+        Bot->>DB: 重发一次
+    else 缺货
+        Bot->>Stripe: 自动退款，订单改 refunded
+    end
+    Bot->>DB: 晚上对账：Stripe 流水 vs D1 状态
+    Bot->>Buyer: 对不上就标出来，第二天早上人工看
+
+    Note over Store,Bot: kill switch 跳闸后：只进不出，恢复必须人工点
+```

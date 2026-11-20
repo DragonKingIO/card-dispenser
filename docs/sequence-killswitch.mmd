@@ -1,0 +1,36 @@
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Bot as Devin Bot
+    participant Store as Worker
+    participant DB as D1 (config/audit_log)
+    participant Buyer as 买家
+
+    Note over Bot,DB: 三层熔断
+
+    Bot->>Store: POST /v1/bot/heartbeat（每 5 分钟）
+    Store->>DB: last_bot_heartbeat = now
+
+    alt 手动开关
+        Buyer->>Store: POST /v1/admin/kill-switch {"value":"on"}
+        Store->>DB: kill_switch = on，记 audit
+    end
+
+    alt 自动跳闸
+        Bot->>Store: POST /v1/bot/tasks {"type":"check-breaker"}
+        Store->>DB: 读最近 10 分钟 audit_log
+        Store->>Store: 报错 ≥5 或退款失败 ≥2 或库存对不上 ≥3？
+        Store->>DB: kill_switch = on，记 kill_switch_auto_trip
+    end
+
+    alt 心跳保底
+        Buyer->>Store: POST /v1/orders
+        Store->>DB: 查 kill_switch + last_bot_heartbeat
+        Store->>Buyer: 开关开着 → 503 kill_switch_on
+        Store->>Buyer: 心跳断了 >10 分钟 → 503 bot_heartbeat_stale
+    end
+
+    Note over Store,DB: 跳闸后只进不出，恢复必须人工点，bot 不能自己恢复
+    Buyer->>Store: POST /v1/admin/kill-switch {"value":"off"}
+    Store->>DB: kill_switch = off，记 audit
+```

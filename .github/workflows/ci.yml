@@ -1,0 +1,23 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: test
+        run: npm test
+      - name: syntax check all worker sources
+        run: for f in src/*.js; do node --check "$f"; done
+      - name: validate migrations
+        run: |
+          python3 -c "
+          import sqlite3
+          c = sqlite3.connect(':memory:')
+          for f in ['migrations/0001_init.sql', 'migrations/0002_idempotency.sql']:
+              c.executescript(open(f).read())
+          print('migrations ok:', [r[0] for r in c.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\")])
+          "

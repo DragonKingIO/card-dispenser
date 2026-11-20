@@ -1,0 +1,63 @@
+```mermaid
+erDiagram
+    cards ||--o{ orders : "被订单锁定/发出"
+    orders ||--o{ refunds : "产生"
+    orders ||--o{ audit_log : "被记录"
+    cards ||--o{ audit_log : "被记录"
+
+    cards {
+        int id PK
+        string sku
+        string code "唯一，卡密本身"
+        string status "unsold/locked/issued/refunded"
+        int order_id FK
+        int created_at
+        int updated_at
+    }
+    orders {
+        int id PK
+        string stripe_payment_intent "唯一"
+        string sku
+        int amount_cents
+        string currency
+        string buyer_fingerprint
+        string status "pending/paid/held/fulfilled/refunded/failed"
+        int risk_score
+        int card_id FK
+        int created_at
+        int updated_at
+    }
+    refunds {
+        int id PK
+        int order_id FK
+        string stripe_refund_id
+        int amount_cents
+        string reason
+        int created_at
+    }
+    audit_log {
+        int id PK
+        int order_id
+        int card_id
+        string actor "system/devin-bot/admin"
+        string action
+        string detail
+        int created_at
+    }
+    config {
+        string key PK "kill_switch / last_bot_heartbeat"
+        string value
+        int updated_at
+    }
+    idempotency_keys {
+        string key PK
+        string fingerprint
+        string response_json
+        int created_at
+    }
+    rate_limits {
+        string key PK
+        int window_start PK
+        int count
+    }
+```
